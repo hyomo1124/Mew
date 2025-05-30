@@ -16,7 +16,7 @@ const availableDates = [
 ];
 
 // 30분 간격으로 고정된 시간 슬롯 정의
-const fixedTimeSlots = [
+const fixedTimeSlots = [ 
   "09:30", "10:00", "10:30", "11:00", "11:30", 
   "12:00", "12:30", "13:00", "13:30", "14:00", "14:30", 
   "15:00", "15:20"
@@ -120,18 +120,18 @@ const calculateTimeDifference = (startTime, endTime) => {
 };
 
 function Dashboard() {
-  // 기본 날짜를 오늘 날짜로 설정 (혹은 availableDates에서 isDefault: true로 마킹된 날짜)
-  const defaultDate = availableDates.find(d => d.isDefault) || availableDates[availableDates.length - 1];
+  const defaultDate = availableDates.find(d => d.isDefault) || availableDates[0];
   
-  const [thresholdValue, setThresholdValue] = useState(0.15); // 동조화 수치 임계값
+  const [thresholdValue, setThresholdValue] = useState(0.05); // 동조화 수치 임계값 고정정
   const [thresholdReturn, setThresholdReturn] = useState(-0.04); // 수익률 임계값
   const [selectedDate, setSelectedDate] = useState(defaultDate.date); // 기본 날짜로 초기화
   
     // 데이터 상태 관리 추가
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [circuitBreakerConfig, setCircuitBreakerConfig] = useState([]);
+    const [data, setData] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [circuitBreakerConfig, setCircuitBreakerConfig] = useState([]);
+    const [dismissedAlerts, setDismissedAlerts] = useState({}); // 날짜별로 삭제된 알림 추
 
   // 유틸리티 함수들 추가 (loadData 함수 앞에 추가)
 const getCircuitBreakerForDate = (date) => {
@@ -149,7 +149,6 @@ const isTimeInCircuitBreakerPeriod = (time, date) => {
 
   // 선택된 날짜에 서킷브레이커 여부 확인
   const hasCircuitBreaker = getCircuitBreakerForDate(selectedDate) !== null;
-
 
   
   // 서킷브레이커 설정 로드 함수 추가 
@@ -176,7 +175,7 @@ const loadCircuitBreakerConfig = async () => {
     setLoading(true);
     
     // API에서 동조화 값 (date, time, value) 로드
-    const syncResponse = await fetch('https://mocki.io/v1/8d0bd5b7-9c02-4eed-9238-43b352cdd3a8');
+    const syncResponse = await fetch('https://mocki.io/v1/ab9ee5cc-a0c9-4bab-b1a8-d671d61cf853');
     const syncApiData = await syncResponse.json();
     
     
@@ -234,8 +233,13 @@ const mergedData = syncData.map(syncItem => {
 
   // 선택된 날짜가 변경될 때마다 데이터 다시 로드
   useEffect(() => {
-    if (circuitBreakerConfig.length >= 0) { // 설정이 로드된 후에만 실행
-     loadData();
+    if (selectedDate && circuitBreakerConfig.length >= 0) {
+      loadData();
+      // 날짜가 변경되면 해당 날짜의 삭제된 알림 목록 초기화
+      setDismissedAlerts(prev => ({
+        ...prev,
+        [selectedDate]: prev[selectedDate] || []
+      }));
     }
   }, [selectedDate, circuitBreakerConfig]);
   
@@ -256,10 +260,26 @@ const mergedData = syncData.map(syncItem => {
     // 경고 구간 계산 (동적)
   const warningRanges = findWarningRanges(processedData, thresholdValue, thresholdReturn);
 
+   // Y축 범위 동적 계산
+  const calculateYAxisDomain = (data, dataKey, padding = 0.1) => {
+    const values = data.map(item => item[dataKey]).filter(val => val !== null && val !== undefined);
+    if (values.length === 0) return [0, 1];
+    
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min;
+    const paddingValue = range * padding;
+    
+    return [min - paddingValue, max + paddingValue];
+  };
+
+  // 동적 Y축 범위 계산
+  const leftAxisDomain = calculateYAxisDomain(processedData, 'value', 0.1);
+  const rightAxisDomain = calculateYAxisDomain(processedData, 'return', 0.1);
   
   // 경고 신호가 발생한 데이터 포인트 필터링 (실제로 두 조건을 모두 만족하는 포인트만)
   const warningPoints = processedData.filter(item => 
-    item.value < thresholdValue && item.return < thresholdReturn
+    item.event === 'warning'
   );
   
   // 서킷브레이커 시간 찾기
@@ -284,6 +304,11 @@ const mergedData = syncData.map(syncItem => {
       timeToCircuitBreaker
     };
   })
+  // 삭제된 알림 필터링
+  .filter(alert => {
+    const dismissedForDate = dismissedAlerts[selectedDate] || [];
+    return !dismissedForDate.includes(alert.time);
+  })
   // 시간 내림차순 정렬 (최신순)
   .sort((a, b) => {
     const [aHour, aMinute] = a.time.split(":").map(Number);
@@ -297,11 +322,12 @@ const mergedData = syncData.map(syncItem => {
   
   return (
     <div style={{ 
-      width: '95%', 
-      height: '100vh', 
-      padding: '20px',
+      minWidth: '100vw', 
+      minHeight: '100vh', 
+      padding: '120px',
       backgroundColor: '#f9fafb',
-      fontFamily: 'Arial, sans-serif'
+      fontFamily: 'Arial, sans-serif',
+      boxSizing: 'border-box'
     }}>
       {/* 헤더 */}
       <div style={{ 
@@ -327,7 +353,7 @@ const mergedData = syncData.map(syncItem => {
             border: 'none',
             cursor: 'pointer'
           }} onClick={() => window.location.reload()}>
-            <span>새로고침</span>
+            <span>초기화</span>
           </button>
         </div>
       </div>
@@ -342,7 +368,7 @@ const mergedData = syncData.map(syncItem => {
       }}>
         <div style={{ 
           display: 'grid', 
-          gridTemplateColumns: 'repeat(5, 1fr)', 
+          gridTemplateColumns: 'repeat(4, 1fr)', 
           gap: '50px' 
         }}>
           <div>
@@ -444,19 +470,6 @@ const mergedData = syncData.map(syncItem => {
                 <option value="kospi_top40">KOSPI 거래량 상위 40개</option>
               </select>
             </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-            <button style={{ 
-              backgroundColor: '#2563eb',
-              color: 'white',
-              padding: '8px 12px',
-              borderRadius: '4px',
-              width: '100%',
-              border: 'none',
-              cursor: 'pointer'
-            }}>
-              백테스팅 실행
-            </button>
           </div>
         </div>
       </div>
@@ -586,8 +599,8 @@ const mergedData = syncData.map(syncItem => {
             scale="point"
             padding={{ left: 20, right: 20 }}
           /> 
-          <YAxis yAxisId="left" domain={[0.13, 0.3]} />
-          <YAxis yAxisId="right" orientation="right" domain={[-0.09, 0]} />
+          <YAxis yAxisId="left" domain={leftAxisDomain} tickFormatter={(value) => value.toFixed(2)} />
+          <YAxis yAxisId="right" orientation="right" domain={rightAxisDomain} tickFormatter={(value) => value.toFixed(2)} />
           
           {/* 동적으로 계산된 경고 구간 */}
           {warningRanges.map((range, index) => (
@@ -634,15 +647,14 @@ const mergedData = syncData.map(syncItem => {
           {/* 서킷브레이커 지점에 이모지 표시 - 선택된 날짜에 서킷브레이커가 있을 경우에만 표시 */}
           {hasCircuitBreaker && (() => {
             const cbInfo = getCircuitBreakerForDate(selectedDate);
+            if (!cbInfo) return null;
             return (
               <ReferenceArea
-                x={cbInfo.time_start}
-                yAxisId="left"
-                fill="#dcfce7"
-                fillOpacity={0.3}
-                stroke="#22c55e"
-                strokeOpacity={0.8}
-                strokeWidth={2}
+              key="circuit-breaker-line"
+              x={cbInfo.time_start}
+              stroke="#22c55e"
+              strokeWidth={3}
+              strokeDasharray="5 5"
                 label={{
                   value: `✅ 서킷브레이커 (${cbInfo.time_start})`,
                   position: "insideTopLeft",
@@ -653,14 +665,15 @@ const mergedData = syncData.map(syncItem => {
             );
           })()}
           
-          {/* 범례 - 1. 동조화 수치 */}
+           {/* 범례 - 1. 동조화 수치 */}
           <Line 
             yAxisId="left"
             type="monotone" 
             dataKey="value" 
             stroke="#ef4444" 
             strokeWidth={2}
-            activeDot={{ r: 8 }}
+            dot={false}
+            activeDot={{ r: 6, fill: "#ef4444", stroke: "#ffffff", strokeWidth: 2 }}
             name="Distance matrix"
             connectNulls={true}
           />
@@ -671,37 +684,40 @@ const mergedData = syncData.map(syncItem => {
             type="monotone" 
             dataKey={() => thresholdValue} 
             stroke="#ef4444" 
-            strokeDasharray="1 1"
-            dot={false}  // 점 표시 안함
+            strokeDasharray="2 1"
+            activeDot={false}
+            dot={false} 
           />
 
           {/* 범례 - 3. KOSPI Index return */}
           <Line 
             yAxisId="right"
+            dot={false}
             type="monotone" 
             dataKey="return" 
             stroke="#3b82f6" 
             strokeWidth={2}
-            activeDot={{ r: 8 }}
+            activeDot={{ r: 6, fill: "#3b82f6", stroke: "#ffffff", strokeWidth: 2 }}
             name="KOSPI Index return"
             connectNulls={true}
           />
           
-          {/* 범례 - 4. KOSPI Index return */}
+          {/* 범례 - 4. KOSPI Index return 임계값값*/}
           <Line 
             yAxisId="right"
             type="monotone" 
             dataKey={() => thresholdReturn} 
             stroke="#3b82f6" 
-            strokeDasharray="1 1"
-            dot={false}  // 점 표시 안함
+            strokeDasharray="2 1"
+            activeDot={false}
+            dot={false}
           />
           
           <Tooltip 
             formatter={(value, name) => {
               if (name === "Distance matrix") return [value, name];
               if (name === "KOSPI Index return") return [`${(value).toFixed(2)}%`, name];
-              return [value, name];
+              return null;
             }}
           />
           <Legend />
@@ -722,7 +738,8 @@ const mergedData = syncData.map(syncItem => {
           <h2 style={{ 
             fontSize: '1.25rem', 
             fontWeight: 'bold',
-            marginBottom: '16px' 
+            marginBottom: '16px' ,
+            textAlign: 'left'
           }}>알림 내역 - {selectedDateInfo.label}</h2>
           
           {/* 알림 항목들 - 동적으로 생성 */}
@@ -736,22 +753,43 @@ const mergedData = syncData.map(syncItem => {
                     padding: '16px',
                     marginBottom: '8px',
                     backgroundColor: '#fafafa',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    position: 'relative',
+                    transition: 'all 0.3s ease'
+                  }}
+                  onClick={() => {
+                    setDismissedAlerts(prev => ({
+                      ...prev,
+                      [selectedDate]: [...(prev[selectedDate] || []), alert.time]
+                    }));
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f3f4f6';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#fafafa';
                   }}
                 >
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <div style={{ color: '#ef4444', marginRight: '8px' }}>⚠️</div>
-                    <div>
+                  <div style={{ color: '#ef4444', marginRight: '8px' }}>⚠️</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <p style={{ fontWeight: 'bold' }}>동조화 신호 발생</p>
+                      <span style={{ 
+                        fontSize: '0.75rem', 
+                        color: '#9ca3af',
+                        fontStyle: 'italic'
+                      }}>X</span>
+                    </div>
                       <div style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '4px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'left', gap: '4px' }}>
                           <span>🕒</span>
                           <span>{`${selectedDate} ${alert.time}`}</span>
                         </div>
-                        <div style={{ marginTop: '4px' }}>
+                        <div style={{ marginTop: '4px', textAlign: 'left' }}>
                           <span style={{ fontWeight: '500' }}>동조화 수치:</span> {alert.value.toFixed(2)} (임계치: {thresholdValue})
                         </div>
-                        <div style={{ marginTop: '4px' }}>
+                        <div style={{ marginTop: '4px', textAlign: 'left' }}>
                           <span style={{ fontWeight: '500' }}>수익률:</span> {alert.return.toFixed(2)}% (임계치: {thresholdReturn.toFixed(2)}%)
                         </div>
                         {hasCircuitBreaker && (
@@ -781,7 +819,7 @@ const mergedData = syncData.map(syncItem => {
                 padding: '16px', 
                 backgroundColor: '#f9fafb', 
                 borderRadius: '4px',
-                textAlign: 'center',
+                textAlign: 'left',
                 color: '#6b7280'
               }}>
                 현재 임계값 기준으로 발생한 알림이 없습니다.
