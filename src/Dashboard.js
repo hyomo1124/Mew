@@ -341,7 +341,7 @@ const mergedData = syncData.map(syncItem => {
         alignItems: 'center'
       }}>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#1f2937' }}>
-          Market Early Warning System⚠️ 
+          Market Early Warning System🐌 
         </h1>
         <div style={{ display: 'flex', gap: '16px' }}>
           <button style={{ 
