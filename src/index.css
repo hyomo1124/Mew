@@ -1,3 +1,9 @@
+:root {
+  --chart-1: #ef4444;
+  --chart-2: #475569;
+  --chart-3: #ffefef;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
